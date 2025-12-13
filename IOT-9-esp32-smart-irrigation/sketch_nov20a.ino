@@ -6,8 +6,8 @@
 #include "DHT.h"
 
 // --- 1. CẤU HÌNH WIFI & MQTT ---
-const char* ssid = "Em Khoi Tai Xiu";      
-const char* password = "tu1denchin"; 
+const char* ssid = "your_wifi";      
+const char* password = "your_pass"; 
 
 const char* mqtt_server = "96ad0e1c02e145399b29a23b82373b6f.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
