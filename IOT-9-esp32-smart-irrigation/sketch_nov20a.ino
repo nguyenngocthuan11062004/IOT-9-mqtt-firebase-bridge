@@ -9,10 +9,10 @@
 const char* ssid = "your_wifi";      
 const char* password = "your_pass"; 
 
-const char* mqtt_server = "96ad0e1c02e145399b29a23b82373b6f.s1.eu.hivemq.cloud";
+const char* mqtt_server = "MQTT_HOST";
 const int mqtt_port = 8883;
-const char* mqtt_username = "IOT_9"; 
-const char* mqtt_password = "Thuannguyen123@"; 
+const char* mqtt_username = "MQTT_USERNAME"; 
+const char* mqtt_password = "MQTT_PASSWORD"; 
 
 // --- 2. CẤU HÌNH PHẦN CỨNG ---
 // Relay
