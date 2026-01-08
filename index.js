@@ -11,7 +11,6 @@ const options = {
 
 const client = mqtt.connect(options);
 
-// ================= Firebase =================
 const admin = require("firebase-admin");
 const serviceAccount = require("./serviceAccountKey.json");
 
@@ -22,28 +21,24 @@ admin.initializeApp({
 
 const db = admin.database();
 
-// ========================================================
 // 1. Sub MQTT Topics từ ESP32
-// ========================================================
 
 client.on("connect", () => {
-  console.log("Connected to HiveMQ");
+  console.log("✅ Connected to HiveMQ");
 
   client.subscribe("esp32/temperature");
   client.subscribe("esp32/humidity");
   client.subscribe("esp32/rain_status");
   client.subscribe("esp32/relay_state");
 
-  console.log("Subscribed to ESP32 topics");
+  console.log("📡 Subscribed to ESP32 topics");
 });
 
-// ========================================================
-// 2. Khi nhận data từ ESP32 → đưa vào Firebase
-// ========================================================
+// 2. ESP32 → MQTT → Firebase (Sensor data)
 
 client.on("message", async (topic, messageBuffer) => {
   const message = messageBuffer.toString();
-  console.log(`MQTT [${topic}]: ${message}`);
+  console.log(`📥 MQTT [${topic}]: ${message}`);
 
   let path = null;
 
@@ -59,34 +54,84 @@ client.on("message", async (topic, messageBuffer) => {
     timestamp: Date.now()
   });
 
-  console.log(`Firebase updated: ${path}`);
+  console.log(`🔥 Firebase updated: ${path}`);
 });
 
-// ========================================================
-// 3. LẮNG NGHE Firebase → Điều khiển ESP32
-// ========================================================
+// 3. Firebase → MQTT (Relay control)
+
 db.ref("sensor/relay").on("value", (snapshot) => {
   let relayState = snapshot.val();
   if (!relayState) return;
 
-  // Kiểm tra nếu relayState là một đối tượng, lấy giá trị "value"
   if (typeof relayState === "object" && relayState.value) {
-    relayState = relayState.value.toUpperCase();  // Lấy giá trị và chuyển thành chữ hoa
+    relayState = relayState.value.toUpperCase();
   } else {
-    console.log("relayState is not an object with a value:", relayState);
-    return;  // Nếu không phải đối tượng với trường "value", bỏ qua
+    console.log("⚠️ Invalid relayState:", relayState);
+    return;
   }
 
-  console.log("Firebase relay state changed →", relayState);
+  console.log("🔁 Firebase relay changed →", relayState);
 
-  // Gửi lệnh xuống ESP32 qua MQTT khi trạng thái thay đổi
   if (relayState === "ON") {
     client.publish("esp32/relay", "ON");
-    console.log("Sent MQTT: relay ON");
+    console.log("➡️ Sent MQTT: relay ON");
   }
 
   if (relayState === "OFF") {
     client.publish("esp32/relay", "OFF");
-    console.log("Sent MQTT: relay OFF");
+    console.log("➡️ Sent MQTT: relay OFF");
   }
 });
+
+// ========================================================
+// 4. SCHEDULE ENGINE – CHECK LỊCH MỖI PHÚT
+// ========================================================
+
+console.log("⏰ Schedule engine started");
+
+setInterval(async () => {
+  try {
+    const snapshot = await db.ref("schedules").once("value");
+    const schedules = snapshot.val();
+    if (!schedules) return;
+
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const todayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+
+    for (const [id, schedule] of Object.entries(schedules)) {
+      if (!schedule.enabled) continue;
+
+      // Chống chạy lại nhiều lần trong cùng ngày
+      if (schedule.last_run === todayKey) continue;
+
+      if (
+        schedule.hour === hour &&
+        schedule.minute === minute
+      ) {
+        console.log(`⏳ Trigger schedule: ${id}`);
+
+        // BẬT BƠM
+        await db.ref("sensor/relay").set({
+          value: "ON",
+          timestamp: Date.now()
+        });
+
+        // Lưu last_run
+        await db.ref(`schedules/${id}/last_run`).set(todayKey);
+
+        // TẮT SAU duration_sec
+        setTimeout(async () => {
+          await db.ref("sensor/relay").set({
+            value: "OFF",
+            timestamp: Date.now()
+          });
+          console.log(`✅ Schedule ${id} finished`);
+        }, (schedule.duration_sec || 300) * 1000);
+      }
+    }
+  } catch (err) {
+    console.error("❌ Schedule engine error:", err.message);
+  }
+}, 60 * 1000);
